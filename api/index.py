@@ -14,9 +14,21 @@ from starlette.middleware.cors import CORSMiddleware
 
 from collection import COLLECTION
 
+# Локально .env лежит рядом с этим файлом. На Vercel переменные окружения
+# задаются в настройках проекта (Settings -> Environment Variables) и .env
+# не нужен.
 load_dotenv(Path(__file__).parent / '.env')
-client = AsyncIOMotorClient(os.environ['MONGO_URL'])
-db = client[os.environ['DB_NAME']]
+
+MONGO_URL = os.environ.get('MONGO_URL')
+if not MONGO_URL:
+    raise RuntimeError(
+        'Не задана переменная окружения MONGO_URL. Нужна строка подключения '
+        'к MongoDB (например, кластер MongoDB Atlas) — Vercel базу не хранит.'
+    )
+DB_NAME = os.environ.get('DB_NAME', 'tish')
+
+client = AsyncIOMotorClient(MONGO_URL)
+db = client[DB_NAME]
 
 
 @asynccontextmanager
@@ -133,10 +145,16 @@ async def create_lead(payload: LeadCreate):
 
 
 app.include_router(api)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=os.environ['CORS_ORIGINS'].split(','),
-    allow_credentials=False,
-    allow_methods=['GET', 'POST'],
-    allow_headers=['Content-Type'],
-)
+# На Vercel фронт и API обычно живут на одном домене (см. rewrites в
+# vercel.json), поэтому CORS можно не настраивать вовсе. CORS_ORIGINS нужен,
+# только если бэкенд дергают с другого домена — тогда перечислите его через
+# запятую в переменной окружения.
+cors_origins = os.environ.get('CORS_ORIGINS', '')
+if cors_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=cors_origins.split(','),
+        allow_credentials=False,
+        allow_methods=['GET', 'POST'],
+        allow_headers=['Content-Type'],
+    )
